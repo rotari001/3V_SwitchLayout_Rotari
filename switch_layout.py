@@ -1,3 +1,4 @@
+
 import re
 import click
 import pyperclip
@@ -58,22 +59,27 @@ def format_stat(count: int, total: int, view: str | None) -> str:
 
 
 def detect_direction(text: str) -> str:
-    """Determine conversion direction from the letters in the source text."""
+    """Определить направление конвертации по буквам исходного текста."""
     if not text or not text.strip():
-        raise ValueError("буфер обмена пуст")
+        raise ValueError("Буфер обмена пуст")
+
     cyrillic_count = len(CYRILLIC_RE.findall(text))
     latin_count = len(LATIN_RE.findall(text))
+
     if cyrillic_count == 0 and latin_count == 0:
-        raise ValueError("в тексте нет букв для определения раскладки")
+        raise ValueError("В тексте нет букв для определения раскладки")
+
     if cyrillic_count == latin_count:
-        raise ValueError("не удалось однозначно определить раскладку: количество русских и английских букв одинаково")
+        raise ValueError("Не удалось однозначно определить раскладку")
+
     if latin_count > cyrillic_count:
         return "en-ru"
+
     return "ru-en"
 
 
 def convert_layout(text: str) -> str:
-    """Convert text to the opposite keyboard layout."""
+    """Преобразовать текст в противоположную раскладку."""
     direction = detect_direction(text)
     table = EN_TO_RU if direction == "en-ru" else RU_TO_EN
     return text.translate(table)
@@ -91,28 +97,43 @@ def convert():
         original = pyperclip.paste()
         direction = detect_direction(original)
         converted = convert_layout(original)
+        pyperclip.copy(converted)
     except (ValueError, pyperclip.PyperclipException) as error:
         raise click.ClickException(str(error)) from error
 
-    pyperclip.copy(converted)
     init_db()
     with Session(engine) as session:
         save_translation(session, direction, len(original))
+
     click.echo(converted)
 
 
-@cli.command()
-@click.option("--view", type=click.Choice(["abs", "rel"]), default=None,
-              help="Формат чисел: abs — количество, rel — проценты. По умолчанию оба.")
+@click.command()
+@click.option(
+    "--view",
+    type=click.Choice(["abs", "rel"]),
+    default=None,
+    help="abs — количество, rel — проценты; по умолчанию показываются оба значения.",
+)
 def stats(view):
     """Показать статистику конвертаций."""
     init_db()
     with Session(engine) as session:
         en_ru, ru_en, longest = get_stats(session)
+
     total = en_ru + ru_en
     click.echo(f"en-ru: {format_stat(en_ru, total, view)}")
     click.echo(f"ru-en: {format_stat(ru_en, total, view)}")
     click.echo(f"Самый длинный текст: {longest} символов")
+
+
+@click.group()
+def cli():
+    """Команды утилиты switch_layout."""
+
+
+cli.add_command(convert)
+cli.add_command(stats)
 
 
 if __name__ == "__main__":
